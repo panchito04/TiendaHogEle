@@ -204,12 +204,15 @@ export default function App() {
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           currentView={currentView}
-          setCurrentView={setCurrentView}
+          onBackToCatalog={handleBackToCatalog}
           onLogoutAdmin={handleAdminLogout}
           catalogCount={products.length}
         />
         <main className="flex-1">
-          <AdminPanel onBackToCatalog={handleBackToCatalog} />
+          <AdminPanel 
+            onBackToCatalog={handleBackToCatalog} 
+            onProductSaved={loadPublishedCatalog}
+          />
         </main>
         <Footer onOpenAdminLogin={handleOpenAdminLogin} />
       </div>
@@ -226,7 +229,7 @@ export default function App() {
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           currentView={currentView}
-          setCurrentView={setCurrentView}
+          onBackToCatalog={handleBackToCatalog}
           onLogoutAdmin={handleAdminLogout}
           catalogCount={products.length}
           onOpenFilterDrawer={() => setIsFilterDrawerOpen(true)}

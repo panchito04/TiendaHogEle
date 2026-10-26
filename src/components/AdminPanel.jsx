@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Plus, Search, Edit3, Trash2, Eye, EyeOff, Check, Image as ImageIcon, Video, QrCode, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react'
 import { catalogService } from '../services/catalogService'
 
-export default function AdminPanel({ onBackToCatalog }) {
+export default function AdminPanel({ onBackToCatalog, onProductSaved }) {
   const [activeTab, setActiveTab] = useState('catalog') // 'catalog' | 'warehouse'
   const [catalogItems, setCatalogItems] = useState([])
   const [warehouseItems, setWarehouseItems] = useState([])
@@ -125,15 +125,21 @@ export default function AdminPanel({ onBackToCatalog }) {
       id_categoria: formData.id_categoria ? parseInt(formData.id_categoria) : null
     }
 
-    await catalogService.saveProductToCatalog(payload)
-    setIsFormOpen(false)
-    loadData()
+    const res = await catalogService.saveProductToCatalog(payload)
+    if (res.success) {
+      if (onProductSaved) onProductSaved()
+      setIsFormOpen(false)
+      loadData()
+    } else {
+      alert('Hubo un problema al guardar: ' + (res.error || 'Revisa la conexión'))
+    }
   }
 
   // Cambiar estado rápido
   const handleToggleStatus = async (item) => {
     const nextStatus = item.estado === 'disponible' ? 'pausado' : 'disponible'
-    await catalogService.updateStatus(item.id, nextStatus)
+    await catalogService.updateStatus(item.id_producto || item.id, nextStatus)
+    if (onProductSaved) onProductSaved()
     loadData()
   }
 
@@ -141,6 +147,7 @@ export default function AdminPanel({ onBackToCatalog }) {
   const handleRemove = async (id) => {
     if (confirm('¿Deseas retirar este producto del catálogo público?')) {
       await catalogService.removeFromCatalog(id)
+      if (onProductSaved) onProductSaved()
       loadData()
     }
   }

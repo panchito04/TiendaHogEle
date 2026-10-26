@@ -1,7 +1,24 @@
-import React from 'react'
-import { Lock } from 'lucide-react'
+import React, { useRef } from 'react'
 
 export default function Footer({ onOpenAdminLogin }) {
+  const clickCountRef = useRef(0)
+  const clickTimeoutRef = useRef(null)
+
+  // Acceso discreto mediante 3 clics seguidos en el copyright
+  const handleSecretClick = () => {
+    clickCountRef.current += 1
+    if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current)
+
+    if (clickCountRef.current >= 3) {
+      clickCountRef.current = 0
+      if (onOpenAdminLogin) onOpenAdminLogin()
+    } else {
+      clickTimeoutRef.current = setTimeout(() => {
+        clickCountRef.current = 0
+      }, 1500)
+    }
+  }
+
   return (
     <footer className="mt-16 bg-white border-t border-gray-200 text-gray-500 text-xs py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -27,20 +44,16 @@ export default function Footer({ onOpenAdminLogin }) {
         </div>
 
         <div className="pt-4 flex flex-col sm:flex-row items-center justify-between text-[11px] text-gray-400 gap-2">
-          <p>© {new Date().getFullYear()} Hogar Elegante. Todos los derechos reservados.</p>
+          {/* El texto del copyright tiene el disparador secreto de 3 clics */}
+          <p 
+            onClick={handleSecretClick}
+            className="cursor-default select-none transition-colors"
+            title=""
+          >
+            © {new Date().getFullYear()} Hogar Elegante. Todos los derechos reservados.
+          </p>
           
-          <div className="flex items-center space-x-4">
-            <span>Catálogo de Venta Directa</span>
-            {/* Acceso discreto para el administrador al final de la página */}
-            <button
-              onClick={onOpenAdminLogin}
-              className="inline-flex items-center gap-1 text-gray-400 hover:text-gray-600 transition-colors"
-              title="Acceso Administrativo"
-            >
-              <Lock className="w-3 h-3" />
-              <span>Acceso Administrativo</span>
-            </button>
-          </div>
+          <p>Catálogo de Venta Directa</p>
         </div>
       </div>
     </footer>

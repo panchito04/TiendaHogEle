@@ -6,7 +6,7 @@ export default function Navbar({
   searchQuery, 
   setSearchQuery, 
   currentView, 
-  setCurrentView,
+  onBackToCatalog,
   onLogoutAdmin,
   catalogCount = 0,
   onOpenFilterDrawer,
@@ -28,7 +28,7 @@ export default function Navbar({
           <div 
             onClick={() => {
               if (isFavoritesView && onToggleFavoritesView) onToggleFavoritesView()
-              setCurrentView('catalog')
+              if (onBackToCatalog) onBackToCatalog()
             }}
             className="flex items-center space-x-2.5 cursor-pointer select-none min-w-0"
           >
@@ -119,8 +119,8 @@ export default function Navbar({
               /* Vista Administrativa Privada */
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => setCurrentView('catalog')}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gray-900 hover:bg-black px-3 py-1.5 rounded-md transition-colors"
+                  onClick={onBackToCatalog}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-gray-900 hover:bg-black px-3 py-1.5 rounded-md transition-colors shadow-sm"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Ver Tienda ({catalogCount})</span>

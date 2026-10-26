@@ -22,14 +22,14 @@ export default function AdminLoginModal({ isOpen, onClose, onLoginSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div 
-        className="relative w-full max-w-xs bg-white rounded-xl shadow-xl border border-gray-200 p-6 text-center"
+        className="relative w-full max-w-xs bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 text-center"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 p-1"
+          className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
         >
           <X className="w-4 h-4" />
         </button>
@@ -39,44 +39,40 @@ export default function AdminLoginModal({ isOpen, onClose, onLoginSuccess }) {
         </div>
 
         <h3 className="text-sm font-bold text-gray-900">
-          Acceso Administrativo
+          Acceso Restringido
         </h3>
         <p className="text-xs text-gray-500 mt-1 mb-4">
-          Ingresa el PIN de seguridad para gestionar el catálogo.
+          Ingresa la clave de autorización.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <input
               type="password"
-              placeholder="PIN de acceso (ej: 1234)"
+              placeholder="••••"
               autoFocus
               value={pin}
               onChange={(e) => {
                 setPin(e.target.value)
                 setError(false)
               }}
-              className="w-full text-center text-sm tracking-widest py-2 px-3 border border-gray-300 rounded focus:border-gray-900 focus:outline-none font-mono"
+              className="w-full text-center text-lg tracking-widest py-2 px-3 border border-gray-300 rounded-lg focus:border-gray-950 focus:outline-none font-mono"
             />
             {error && (
-              <p className="text-[11px] text-red-600 mt-1 flex items-center justify-center gap-1">
+              <p className="text-[11px] text-red-600 mt-1.5 flex items-center justify-center gap-1">
                 <AlertCircle className="w-3 h-3" />
-                <span>PIN incorrecto</span>
+                <span>Clave incorrecta</span>
               </p>
             )}
           </div>
 
           <button
             type="submit"
-            className="w-full py-2 bg-gray-900 hover:bg-black text-white text-xs font-semibold rounded transition-colors"
+            className="w-full py-2.5 bg-gray-950 hover:bg-black text-white text-xs font-semibold rounded-lg transition-colors shadow"
           >
-            Ingresar al Panel
+            Ingresar
           </button>
         </form>
-
-        <p className="text-[10px] text-gray-400 mt-3">
-          PIN por defecto: 1234 (configurable en .env)
-        </p>
       </div>
     </div>
   )
