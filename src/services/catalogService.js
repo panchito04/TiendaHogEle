@@ -1,41 +1,25 @@
 import { supabase } from '../lib/supabaseClient'
 
 const LOCAL_STORAGE_KEY = 'hogar_elegante_curated_catalog'
-const WEB_PREFIX = '<!--HE_WEB-->'
-
-// Función para parsear metadatos web incrustados en la descripción del producto
-function parseWebMetadata(rawDescription, product) {
-  if (!rawDescription) return null
-  const idx = rawDescription.indexOf(WEB_PREFIX)
-  if (idx === -1) return null
-
-  try {
-    const jsonStr = rawDescription.substring(idx + WEB_PREFIX.length).trim()
-    const meta = JSON.parse(jsonStr)
-    return {
-      id: product.id_producto,
-      id_producto: product.id_producto,
-      titulo: product.nombre,
-      descripcion: meta.desc || '',
-      precio: parseFloat(product.precio) || 0,
-      precioAnterior: meta.precioAnterior ? parseFloat(meta.precioAnterior) : null,
-      id_categoria: product.id_categoria,
-      categoriaNombre: product.categoria?.nombre || 'General',
-      fotos: Array.isArray(meta.fotos) && meta.fotos.length > 0 
-        ? meta.fotos 
-        : (product.imagen_url ? [product.imagen_url] : []),
-      videoUrl: meta.videoUrl || '',
-      qrPagoUrl: meta.qrPagoUrl || '',
-      estado: meta.estado || 'disponible',
-      origen: 'supabase_producto'
-    }
-  } catch (e) {
-    console.warn('Error al parsear metadatos web:', e)
-    return null
-  }
-}
 
 export const catalogService = {
+  // Verificar si la tabla catalogo_web ya existe en Supabase
+  async checkTableExists() {
+    try {
+      const { error } = await supabase
+        .from('catalogo_web')
+        .select('id_catalogo')
+        .limit(1)
+
+      if (error && (error.code === 'PGRST204' || error.message?.includes('does not exist'))) {
+        return false
+      }
+      return !error
+    } catch {
+      return false
+    }
+  },
+
   // Obtener categorías oficiales
   async getCategories() {
     try {
@@ -73,41 +57,26 @@ export const catalogService = {
         .order('id_producto', { ascending: false })
 
       if (error) throw error
-      return (data || []).map((p) => {
-        // Limpiar descripción si contiene metadatos web
-        let cleanDesc = p.descripcion || ''
-        const idx = cleanDesc.indexOf(WEB_PREFIX)
-        if (idx !== -1) {
-          try {
-            const meta = JSON.parse(cleanDesc.substring(idx + WEB_PREFIX.length).trim())
-            cleanDesc = meta.desc || ''
-          } catch {
-            cleanDesc = cleanDesc.substring(0, idx).trim()
-          }
-        }
-
-        return {
-          id_producto: p.id_producto,
-          nombre: p.nombre,
-          descripcion: cleanDesc,
-          precio: parseFloat(p.precio) || 0,
-          id_categoria: p.id_categoria,
-          categoriaNombre: p.categoria?.nombre || 'General',
-          imagen_url: p.imagen_url || '',
-          cantidad: p.cantidad || 0
-        }
-      })
+      return (data || []).map((p) => ({
+        id_producto: p.id_producto,
+        nombre: p.nombre,
+        descripcion: p.descripcion || '',
+        precio: parseFloat(p.precio) || 0,
+        id_categoria: p.id_categoria,
+        categoriaNombre: p.categoria?.nombre || 'General',
+        imagen_url: p.imagen_url || '',
+        cantidad: p.cantidad || 0
+      }))
     } catch (err) {
       console.error('Error al obtener inventario de almacén:', err.message)
       return []
     }
   },
 
-  // Obtener productos publicados y activos para el catálogo público
+  // Obtener los productos publicados y activos en catalogo_web
   async getPublishedCatalog() {
     try {
-      // 1. Intentar consultar tabla dedicada catalogo_web si existe en Supabase
-      const { data: webData, error: webError } = await supabase
+      const { data, error } = await supabase
         .from('catalogo_web')
         .select(`
           id_catalogo,
@@ -131,13 +100,13 @@ export const catalogService = {
         .eq('estado', 'disponible')
         .order('id_catalogo', { ascending: false })
 
-      if (!webError && webData && webData.length > 0) {
-        return webData.map((item) => ({
+      if (!error && data) {
+        return data.map((item) => ({
           id: item.id_catalogo,
-          id_producto: item.id_producto,
+          id_producto: item.id_producto, // Puede ser null si es directo
           titulo: item.titulo_comercial,
-          descripcion: item.descripcion_detallada,
-          precio: parseFloat(item.precio),
+          descripcion: item.descripcion_detallada || '',
+          precio: parseFloat(item.precio) || 0,
           precioAnterior: item.precio_anterior ? parseFloat(item.precio_anterior) : null,
           id_categoria: item.id_categoria,
           categoriaNombre: item.categoria?.nombre || 'General',
@@ -149,56 +118,21 @@ export const catalogService = {
         }))
       }
 
-      // 2. Si catalogo_web no existe, consultar productos de Supabase con marca <!--HE_WEB-->
-      const { data: prodData, error: prodError } = await supabase
-        .from('producto')
-        .select(`
-          id_producto,
-          nombre,
-          descripcion,
-          precio,
-          id_categoria,
-          imagen_url,
-          cantidad,
-          categoria:id_categoria (
-            id_categoria,
-            nombre
-          )
-        `)
-        .like('descripcion', `%${WEB_PREFIX}%`)
-        .gt('cantidad', 0)
-        .order('id_producto', { ascending: false })
-
-      if (!prodError && prodData && prodData.length > 0) {
-        const parsedItems = prodData
-          .map((p) => parseWebMetadata(p.descripcion, p))
-          .filter((item) => item !== null && item.estado === 'disponible')
-
-        if (parsedItems.length > 0) {
-          return parsedItems
-        }
-      }
-
-      // 3. Respaldo local si no hay conexión o se guardaron borradores locales
+      // Si la tabla no existe aún en Supabase, consultar almacenamiento local
+      console.warn('Tabla catalogo_web no encontrada en Supabase, usando respaldo local')
       const localData = localStorage.getItem(LOCAL_STORAGE_KEY)
-      if (localData) {
-        const parsed = JSON.parse(localData)
-        return parsed.filter((item) => item.estado === 'disponible')
-      }
-
-      return []
+      return localData ? JSON.parse(localData).filter((item) => item.estado === 'disponible') : []
     } catch (err) {
-      console.warn('Cargando catálogo desde respaldo local:', err.message)
+      console.warn('Error al consultar catalogo_web:', err)
       const localData = localStorage.getItem(LOCAL_STORAGE_KEY)
       return localData ? JSON.parse(localData).filter((item) => item.estado === 'disponible') : []
     }
   },
 
-  // Obtener todos los productos del catálogo de administración
+  // Obtener todos los productos del catálogo web (para el panel de administración)
   async getAllCatalogItems() {
     try {
-      // 1. Intentar de catalogo_web
-      const { data: webData, error: webError } = await supabase
+      const { data, error } = await supabase
         .from('catalogo_web')
         .select(`
           id_catalogo,
@@ -220,13 +154,13 @@ export const catalogService = {
         `)
         .order('id_catalogo', { ascending: false })
 
-      if (!webError && webData && webData.length > 0) {
-        return webData.map((item) => ({
+      if (!error && data) {
+        return data.map((item) => ({
           id: item.id_catalogo,
           id_producto: item.id_producto,
           titulo: item.titulo_comercial,
-          descripcion: item.descripcion_detallada,
-          precio: parseFloat(item.precio),
+          descripcion: item.descripcion_detallada || '',
+          precio: parseFloat(item.precio) || 0,
           precioAnterior: item.precio_anterior ? parseFloat(item.precio_anterior) : null,
           id_categoria: item.id_categoria,
           categoriaNombre: item.categoria?.nombre || 'General',
@@ -238,35 +172,6 @@ export const catalogService = {
         }))
       }
 
-      // 2. Si no, consultar productos con metadatos en Supabase
-      const { data: prodData } = await supabase
-        .from('producto')
-        .select(`
-          id_producto,
-          nombre,
-          descripcion,
-          precio,
-          id_categoria,
-          imagen_url,
-          cantidad,
-          categoria:id_categoria (
-            id_categoria,
-            nombre
-          )
-        `)
-        .like('descripcion', `%${WEB_PREFIX}%`)
-        .order('id_producto', { ascending: false })
-
-      if (prodData && prodData.length > 0) {
-        const items = prodData
-          .map((p) => parseWebMetadata(p.descripcion, p))
-          .filter(Boolean)
-
-        if (items.length > 0) {
-          return items
-        }
-      }
-
       const localData = localStorage.getItem(LOCAL_STORAGE_KEY)
       return localData ? JSON.parse(localData) : []
     } catch {
@@ -275,82 +180,59 @@ export const catalogService = {
     }
   },
 
-  // Guardar y publicar producto en la nube (Supabase) y en local
+  // Guardar o publicar producto en la tabla catalogo_web
   async saveProductToCatalog(productData) {
     try {
-      const meta = {
-        web: true,
-        desc: productData.descripcion || '',
-        precioAnterior: productData.precioAnterior || null,
-        fotos: productData.fotos || [],
-        videoUrl: productData.videoUrl || '',
-        qrPagoUrl: productData.qrPagoUrl || '',
-        estado: productData.estado || 'disponible'
+      const payload = {
+        id_producto: productData.id_producto || null, // null si se sube directo sin producto en almacén
+        titulo_comercial: productData.titulo,
+        descripcion_detallada: productData.descripcion || '',
+        precio: parseFloat(productData.precio) || 0,
+        precio_anterior: productData.precioAnterior ? parseFloat(productData.precioAnterior) : null,
+        id_categoria: productData.id_categoria || null,
+        fotos: Array.isArray(productData.fotos) ? productData.fotos : [],
+        video_url: productData.videoUrl || '',
+        qr_pago_url: productData.qrPagoUrl || '',
+        estado: productData.estado || 'disponible',
+        activo: true
       }
 
-      const packedDescription = `${WEB_PREFIX}${JSON.stringify(meta)}`
+      let supabaseSuccess = false
 
-      // 1. Guardar directamente en la tabla 'producto' de Supabase (persistente en la nube)
-      if (productData.id_producto) {
-        await supabase
-          .from('producto')
-          .update({
-            nombre: productData.titulo,
-            precio: parseFloat(productData.precio) || 0,
-            descripcion: packedDescription,
-            imagen_url: (productData.fotos && productData.fotos[0]) || undefined
-          })
-          .eq('id_producto', productData.id_producto)
+      if (productData.id && typeof productData.id === 'number') {
+        // Actualizar registro existente
+        const { error } = await supabase
+          .from('catalogo_web')
+          .update(payload)
+          .eq('id_catalogo', productData.id)
+
+        if (!error) supabaseSuccess = true
+        else console.error('Error al actualizar en catalogo_web:', error.message)
       } else {
-        // Producto nuevo
-        const { data: newProd } = await supabase
-          .from('producto')
-          .insert([{
-            nombre: productData.titulo,
-            precio: parseFloat(productData.precio) || 0,
-            descripcion: packedDescription,
-            id_categoria: productData.id_categoria,
-            imagen_url: (productData.fotos && productData.fotos[0]) || null,
-            cantidad: 1
-          }])
-          .select('id_producto')
+        // Insertar nuevo registro
+        const { data, error } = await supabase
+          .from('catalogo_web')
+          .insert([payload])
+          .select('id_catalogo')
           .single()
 
-        if (newProd) {
-          productData.id_producto = newProd.id_producto
+        if (!error && data) {
+          productData.id = data.id_catalogo
+          supabaseSuccess = true
+        } else if (error) {
+          console.error('Error al insertar en catalogo_web:', error.message)
         }
       }
 
-      // 2. Intentar también guardar en catalogo_web si la tabla existe
-      try {
-        await supabase
-          .from('catalogo_web')
-          .insert([{
-            id_producto: productData.id_producto,
-            titulo_comercial: productData.titulo,
-            descripcion_detallada: productData.descripcion,
-            precio: parseFloat(productData.precio) || 0,
-            precio_anterior: productData.precioAnterior ? parseFloat(productData.precioAnterior) : null,
-            id_categoria: productData.id_categoria,
-            fotos: productData.fotos || [],
-            video_url: productData.videoUrl || '',
-            qr_pago_url: productData.qrPagoUrl || '',
-            estado: productData.estado || 'disponible',
-            activo: true
-          }])
-      } catch {
-        // Ignorar si la tabla aún no existe
-      }
-
-      // 3. Guardar en almacenamiento local como respaldo adicional
+      // Guardar también copia local como respaldo
       const localList = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]')
-      const targetId = productData.id || productData.id_producto || 'local_' + Date.now()
-      const existingIdx = localList.findIndex((item) => item.id === targetId || item.id_producto === productData.id_producto)
+      const targetId = productData.id || 'local_' + Date.now()
+      const existingIdx = localList.findIndex((item) => item.id === targetId)
 
       const newItem = {
         id: targetId,
-        id_producto: productData.id_producto,
         ...productData,
+        id_producto: productData.id_producto || null,
         fotos: productData.fotos || [],
         estado: productData.estado || 'disponible'
       }
@@ -362,88 +244,50 @@ export const catalogService = {
       }
 
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(localList))
-      return { success: true }
+      return { success: true, supabaseSuccess }
     } catch (err) {
-      console.error('Error al guardar producto:', err)
+      console.error('Error en saveProductToCatalog:', err)
       return { success: false, error: err.message }
     }
   },
 
-  // Cambiar estado (disponible / pausado / vendido)
+  // Cambiar estado en catalogo_web
   async updateStatus(id, newStatus) {
     try {
-      // 1. En Supabase tabla 'producto'
-      const { data: prod } = await supabase
-        .from('producto')
-        .select('descripcion')
-        .eq('id_producto', id)
-        .single()
-
-      if (prod && prod.descripcion && prod.descripcion.includes(WEB_PREFIX)) {
-        const meta = JSON.parse(prod.descripcion.substring(prod.descripcion.indexOf(WEB_PREFIX) + WEB_PREFIX.length).trim())
-        meta.estado = newStatus
-        await supabase
-          .from('producto')
-          .update({
-            descripcion: `${WEB_PREFIX}${JSON.stringify(meta)}`,
-            cantidad: newStatus === 'vendido' ? 0 : 1
-          })
-          .eq('id_producto', id)
-      }
-
-      // 2. En catalogo_web si existe
       await supabase
         .from('catalogo_web')
         .update({ estado: newStatus })
         .eq('id_catalogo', id)
     } catch (err) {
-      console.warn('Actualización de estado remota:', err.message)
+      console.warn('Actualización de estado en catalogo_web:', err)
     }
 
-    // Actualizar local
     const localList = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]')
     const updated = localList.map((item) => 
-      (item.id === id || item.id_producto === id) ? { ...item, estado: newStatus } : item
+      item.id === id ? { ...item, estado: newStatus } : item
     )
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated))
   },
 
-  // Retirar producto del catálogo
+  // Eliminar producto de catalogo_web
   async removeFromCatalog(id) {
     try {
-      // Limpiar metadatos en 'producto'
-      const { data: prod } = await supabase
-        .from('producto')
-        .select('descripcion')
-        .eq('id_producto', id)
-        .single()
-
-      if (prod && prod.descripcion && prod.descripcion.includes(WEB_PREFIX)) {
-        const idx = prod.descripcion.indexOf(WEB_PREFIX)
-        const originalDesc = prod.descripcion.substring(0, idx).trim()
-        await supabase
-          .from('producto')
-          .update({ descripcion: originalDesc })
-          .eq('id_producto', id)
-      }
-
-      // En catalogo_web si existe
       await supabase
         .from('catalogo_web')
         .delete()
         .eq('id_catalogo', id)
     } catch (err) {
-      console.warn('Eliminación en Supabase:', err.message)
+      console.warn('Eliminación en catalogo_web:', err)
     }
 
     const localList = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '[]')
-    const updated = localList.filter((item) => item.id !== id && item.id_producto !== id)
+    const updated = localList.filter((item) => item.id !== id)
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated))
   },
 
-  // Registrar venta y retirar de catálogo
+  // Registrar venta y retirar del catálogo
   async markAsSold(product, customerData = {}) {
-    await this.updateStatus(product.id_producto || product.id, 'vendido')
+    await this.updateStatus(product.id, 'vendido')
     return {
       success: true,
       orderCode: 'HE-' + Math.floor(100000 + Math.random() * 900000)
